@@ -150,6 +150,9 @@ class PipelineTests(unittest.TestCase):
         with open(os.path.join(ROOT, "receipts", sorted(fails)[-1])) as f:
             data = json.load(f)
         self.assertEqual([e["to"] for e in data], ["faildraft@example.com"])
+        # recovery records must carry the resolved ABSOLUTE send time so a
+        # resubmit fires at the original schedule (2026-08-01 12:00 EDT = 16:00 UTC)
+        self.assertEqual(data[0]["send_at"], "2026-08-01T16:00:00+00:00")
 
     # ---------- recontact guard ----------
 

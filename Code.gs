@@ -274,6 +274,7 @@ function cancelBatch_(req) {
     }
     if (res.cancelled > 0) {
       b.state = 'cancelled';
+      b.finishedAt = Date.now();
     } else {
       res.note = 'nothing was pending (already sent / failed / cancelled) — state unchanged';
     }
@@ -350,7 +351,10 @@ function sendDueBatches() {
         var b = JSON.parse(all[k]);
         var terminal = (b.state === 'done' || b.state === 'cancelled' || b.state === 'done_with_failures');
         if (terminal) {
-          if (now - (b.created || 0) > DONE_RETENTION_DAYS * 24 * 3600 * 1000) props.deleteProperty(k);
+          // retention counts from when the batch FINISHED (or was due to send), not
+          // from creation — else a batch scheduled weeks out is purged the day it sends
+          var doneAnchor = Math.max(Number(b.finishedAt) || 0, Number(b.sendAtMs) || 0, Number(b.created) || 0);
+          if (now - doneAnchor > DONE_RETENTION_DAYS * 24 * 3600 * 1000) props.deleteProperty(k);
           continue;
         }
         if (b.sendAtMs > now + 60 * 1000) { rearm.push(b.sendAtMs); continue; }
@@ -416,6 +420,7 @@ function processBatch_(b, props) {
   if (b.state !== 'cancelled') {
     b.state = counts.pending ? 'pending' : (counts.failed ? 'done_with_failures' : 'done');
   }
+  if (b.state !== 'pending' && !b.finishedAt) b.finishedAt = Date.now();
   if (b.state === 'done' || b.state === 'done_with_failures') {
     // slim terminal records (ScriptProperties 9KB/value + 500KB total quotas)
     b.items = b.items.map(function (it) {

@@ -8,9 +8,11 @@ No mail is ever sent — the SMTP conversation stops at RCPT TO, then QUIT.
 
 Input : JSON list of records, each {"email": "...", "alternates": ["..."], ...}
         (any extra keys are passed through untouched)
-Output: the same records, each with a "verify" object:
-        {"verdict", "detail", "mx", "catch_all", "chosen_email"}
+Output: --out gets the records safe to feed into a send batch, each with a
+        "verify" object: {"verdict", "detail", "mx", "catch_all", "chosen_email"}
         verdict: valid | catch_all | invalid | no_mx | unknown (tempfail/timeout/blocked)
+        PROVEN-bad records (verdict invalid / no_mx) are DROPPED into a sibling
+        <out>.rejects.json file; pass --keep-all to keep everything in --out instead.
         When a record has "alternates", each candidate is tried in order and the
         first 'valid' one replaces .email (chosen_email records the winner).
 
@@ -28,6 +30,7 @@ Notes:
 """
 import argparse
 import json
+import os
 import random
 import smtplib
 import socket
@@ -123,6 +126,20 @@ def verdict_for(code, catch_all):
     return 'unknown'
 
 
+DROP_VERDICTS = ('invalid', 'no_mx')
+
+
+def partition_records(records):
+    """Split annotated records into (keep, reject). Only PROVEN-bad addresses —
+    hard bounce or no mail server — are rejected; unknown/catch_all pass through
+    because absence of proof isn't proof of badness."""
+    keep, reject = [], []
+    for r in records:
+        verdict = (r.get('verify') or {}).get('verdict')
+        (reject if verdict in DROP_VERDICTS else keep).append(r)
+    return keep, reject
+
+
 def main():
     ap = argparse.ArgumentParser(description="Bulk email verifier (MX + SMTP RCPT, no mail sent)")
     ap.add_argument('--in', dest='inp', required=True, help="JSON list of {email, alternates?, ...}")
@@ -130,6 +147,8 @@ def main():
     ap.add_argument('--workers', type=int, default=14, help="concurrent domain probes")
     ap.add_argument('--helo', default='example.com', help="HELO/EHLO hostname (use a domain you control)")
     ap.add_argument('--probe-from', default='verify@example.com', help="MAIL FROM probe address")
+    ap.add_argument('--keep-all', action='store_true',
+                    help="keep invalid/no_mx records in --out instead of dropping them to <out>.rejects.json")
     a = ap.parse_args()
 
     records = json.load(open(a.inp))
@@ -185,8 +204,17 @@ def main():
         r['verify']['chosen_email'] = chosen
         tally[r['verify']['verdict']] += 1
         r.pop('_cands', None)
-    json.dump(records, open(a.out, 'w'), indent=1, ensure_ascii=False)
-    print(f'wrote {a.out}: ' + ' | '.join(f'{k} {v}' for k, v in sorted(tally.items())), file=sys.stderr)
+
+    keep, reject = (records, []) if a.keep_all else partition_records(records)
+    dropped = ''
+    if reject:
+        base, ext = os.path.splitext(a.out)
+        rej_path = base + '.rejects' + (ext or '.json')
+        json.dump(reject, open(rej_path, 'w'), indent=1, ensure_ascii=False)
+        dropped = f' — dropped {len(reject)} proven-bad -> {rej_path}'
+    json.dump(keep, open(a.out, 'w'), indent=1, ensure_ascii=False)
+    print(f'wrote {a.out} ({len(keep)} sendable): '
+          + ' | '.join(f'{k} {v}' for k, v in sorted(tally.items())) + dropped, file=sys.stderr)
 
 
 if __name__ == '__main__':

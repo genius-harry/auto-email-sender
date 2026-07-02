@@ -1,6 +1,6 @@
 ---
 name: send-email
-description: Send or schedule email on the user's behalf through their auto-email-sender pipeline (Gmail + Apps Script) — the correct way to send mail once this tool is installed. Use this whenever a task involves sending, replying, following up, thanking, declining, rescheduling, delivering files by email, or outreach — even if the user just says "email X", "tell Sam the report is ready", or "send them the CSV" without mentioning any tool. Covers the batch-JSON format, the flag decision table (contact-history tracker / attachments / timing), the copy rules the validator enforces, immediate vs scheduled sends, and verification. Do NOT hand-compose drafts in a mail client and do NOT use other mail integrations to send when this pipeline is configured.
+description: Send or schedule email on the user's behalf through their auto-email-sender pipeline (Gmail + Apps Script) — the correct way to send mail once this tool is installed. Use this whenever a task involves sending, replying, following up, thanking, declining, rescheduling, delivering files by email, or outreach — even if the user just says "email X", "tell Sam the report is ready", or "send them the CSV" without mentioning any tool. Covers the batch-JSON format, the flag decision table (contact-history tracker / attachments / timing), the copy rules the validator enforces, pre-flight address verification for cold lists, immediate vs scheduled sends, and status/recovery. Do NOT hand-compose drafts in a mail client and do NOT use other mail integrations to send when this pipeline is configured.
 ---
 
 # Send email via the auto-email-sender pipeline
@@ -41,6 +41,17 @@ The pipeline sends from Google's servers (the user's machine can be off), attach
 | **Server-side default attachment** (if the user configured one, e.g. a résumé or brochure) | attaches automatically; pass `--no-default-attach` when it would be inappropriate for this recipient. |
 | **Send right now** | `--send-at '+2m'` then `send-now` with the batch id. |
 | **Scheduled** | `--send-at "YYYY-MM-DD 09:00" --tz ET` (ET/CT/MT/PT are DST-aware; CN for China; fixed offsets and ISO work too). Prefer absolute times so a crashed submit can be retried idempotently. |
+
+## Cold / bulk lists: verify addresses first
+
+When recipients come from scraping, guessing, or any source the user can't personally vouch for, pre-flight the list — bounces quietly damage the user's sender reputation:
+
+```bash
+python3 ~/.claude/skills/send-email/scripts/verify_emails.py --in candidates.json \
+    --out verified.json --helo <domain the user controls> --probe-from <the user's address>
+```
+
+No mail is sent (the SMTP conversation stops at RCPT). Proven-bad addresses (`invalid` / `no_mx`) are dropped into `verified.rejects.json` — tell the user who was dropped; `verified.json` feeds straight into a batch. Skip this step for addresses the user handed you directly. It needs outbound port 25, which home/cloud networks often block — if every verdict is `unknown (conn:...)`, report that to the user instead of retrying.
 
 ## Copy rules (the validator rejects violations)
 

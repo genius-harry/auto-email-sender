@@ -31,5 +31,22 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(v.verdict_for(None, None), "unknown")  # never answered
 
 
+class PartitionTests(unittest.TestCase):
+    @staticmethod
+    def _rec(verdict):
+        return {"email": "x@example.com", "verify": {"verdict": verdict}}
+
+    def test_only_proven_bad_records_are_dropped(self):
+        recs = [self._rec(x) for x in ("valid", "catch_all", "unknown", "invalid", "no_mx")]
+        keep, reject = v.partition_records(recs)
+        self.assertEqual([r["verify"]["verdict"] for r in keep], ["valid", "catch_all", "unknown"])
+        self.assertEqual([r["verify"]["verdict"] for r in reject], ["invalid", "no_mx"])
+
+    def test_record_without_verify_object_is_kept(self):
+        keep, reject = v.partition_records([{"email": "a@example.com"}])
+        self.assertEqual(len(keep), 1)
+        self.assertEqual(reject, [])
+
+
 if __name__ == "__main__":
     unittest.main()

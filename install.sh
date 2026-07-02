@@ -8,6 +8,7 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$DEST/scripts"
 cp "$SRC/skills/send-email/SKILL.md" "$DEST/SKILL.md"
 cp "$SRC/gmail_pipeline.py"          "$DEST/scripts/gmail_pipeline.py"
+cp "$SRC/verify_emails.py"           "$DEST/scripts/verify_emails.py"
 cp "$SRC/mock_server.py"             "$DEST/scripts/mock_server.py"
 
 echo "✓ Skill installed to $DEST"

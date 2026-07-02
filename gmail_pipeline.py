@@ -442,6 +442,13 @@ def cmd_submit(args):
         if ans != "y":
             sys.exit("aborted")
 
+    def recovery_record(em, ms):
+        # original text + the ABSOLUTE time its group resolved to, so per-email
+        # send_at fan-outs survive into recovery files and resubmit at the right time
+        utc = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+        return {"to": em["to"], "subject": em["subject"], "body": em["body"],
+                "send_at": f"{utc:%Y-%m-%dT%H:%M:%S+00:00}"}
+
     # build the full chunk plan first, then submit with incremental receipts
     plan = []
     for ms in sorted(groups):
@@ -478,11 +485,12 @@ def cmd_submit(args):
         dd = "  (deduped — was already submitted)" if out.get("deduped") else ""
         fails = out.get("draft_failures") or []
         if fails:
-            # keep the ORIGINAL email objects so the failed recipients can be
-            # resubmitted as their own batch (a plain retry of this command would
-            # be deduped by client_key and the failures silently dropped)
+            # keep the original text + resolved send time so the failed recipients
+            # can be resubmitted as their own batch (a plain retry of this command
+            # would be deduped by client_key and the failures silently dropped)
             failed_to = {str(f.get("to", "")).lower() for f in fails}
-            failed_recipients.extend(em for em in chunk if em["to"].lower() in failed_to)
+            failed_recipients.extend(recovery_record(em, ms)
+                                     for em in chunk if em["to"].lower() in failed_to)
         warn = f"  ⚠ {out['warning']}" if out.get("warning") else ""
         print(f"  [{idx+1}/{len(plan)}] batch {out['batch_id']}: drafted {out['drafted']}/{len(chunk)}{dd}{warn}"
               + (f"  !! {len(fails)} DRAFT FAILURES: {fails}" if fails else ""))
@@ -492,7 +500,7 @@ def cmd_submit(args):
 
     if failure is not None:
         idx, err = failure
-        remainder = [em for ms, chunk in plan[idx:] for em in chunk
+        remainder = [recovery_record(em, ms) for ms, chunk in plan[idx:] for em in chunk
                      if em["to"].lower() not in submitted_emails]
         rem_path = os.path.join(rdir, f"remainder-{_safe_name(label)}-{stamp}.json")
         with open(rem_path, "w") as f:
@@ -504,6 +512,8 @@ def cmd_submit(args):
         print("   RECOVERY: 1) gmail_pipeline.py status   (confirm what's live)")
         print(f"             2) re-run submit with --batch {rem_path} (same flags) — already-sent chunks")
         print("                are also safe to retry verbatim: client_key dedupes them server-side.")
+        print("                (remainder records carry their resolved ABSOLUTE send_at, so per-email")
+        print("                 times survive; edit any send_at that has already passed)")
         if args.send_at and args.send_at.strip().startswith("+") and default_ms:
             utc = datetime.fromtimestamp(default_ms / 1000, tz=timezone.utc)
             print(f"   NB: you used a relative --send-at; for the retry to dedupe correctly use the")
@@ -519,6 +529,8 @@ def cmd_submit(args):
         print(f"   A verbatim re-run would be DEDUPED server-side and would NOT retry them.")
         print(f"   RECOVERY: re-run submit with --batch {fail_path} (same flags) — the different")
         print("             recipient set produces a new client_key, so it will actually send.")
+        print("             Records keep their original ABSOLUTE send_at — edit it first if that")
+        print("             time has already passed (past times are rejected).")
         exit_code = 1
     if attach_mismatch:
         print("\n!! ATTACHMENT ERROR: at least one chunk was drafted WITHOUT the requested files")

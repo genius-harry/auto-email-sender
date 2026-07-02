@@ -127,7 +127,7 @@ python3 verify_emails.py --in candidates.json --out verified.json \
     --helo yourdomain.com --probe-from you@yourdomain.com
 ```
 
-Input is a JSON list of `{"email": "...", "alternates": ["..."]}`; each record comes back with a `verify` verdict — `valid` / `catch_all` / `invalid` / `no_mx` / `unknown` — and when you supply `alternates`, the first address that verifies replaces `email`. Feed the survivors straight into a send batch. (Outbound port 25 is blocked on most home/cloud networks; run it somewhere that can reach it.)
+Input is a JSON list of `{"email": "...", "alternates": ["..."]}`; each record comes back with a `verify` verdict — `valid` / `catch_all` / `invalid` / `no_mx` / `unknown` — and when you supply `alternates`, the first address that verifies replaces `email`. Proven-bad records (`invalid` / `no_mx`) are **dropped into `verified.rejects.json`**, so the output file is exactly what you feed into a send batch (`--keep-all` keeps everything annotated in one file instead). (Outbound port 25 is blocked on most home/cloud networks; run it somewhere that can reach it.)
 
 ## 📏 Limits & quotas (know before you batch)
 
