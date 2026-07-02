@@ -1,0 +1,12 @@
+[
+  {
+    "to": "your-address@example.com",
+    "subject": "auto-email-sender smoke test 1/2",
+    "body": "Hi there,\n\nThis is the first of two smoke-test emails from auto-email-sender. If this arrived at the scheduled time with this paragraph rendered as normal flowing text, the pipeline is working end to end and you are ready to send real batches.\n\nBest,\nThe pipeline"
+  },
+  {
+    "to": "your-second-address@example.com",
+    "subject": "auto-email-sender smoke test 2/2",
+    "body": "Hi there,\n\nThis is the second smoke-test email from auto-email-sender, sent in the same batch as the first. Two arrivals means chunking, drafting, and the scheduled trigger all behaved. You can now delete these and start using the CLI for real.\n\nBest,\nThe pipeline"
+  }
+]
