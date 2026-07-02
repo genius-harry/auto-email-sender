@@ -116,6 +116,17 @@ AUTO_EMAIL_CONFIG=/tmp/test.json python3 gmail_pipeline.py init --url http://127
 AUTO_EMAIL_CONFIG=/tmp/test.json python3 gmail_pipeline.py submit --batch test-batch.json --send-at '+10m' --no-tracker-check --yes
 ```
 
+## ✅ Bonus: verify addresses before you send
+
+Bundled `verify_emails.py` pre-flights a recipient list so bad addresses never turn into bounces (which quietly wreck your sender reputation). MX lookup + a live SMTP `RCPT TO` probe + catch-all detection — **no mail is ever sent**, the conversation stops at RCPT then QUITs.
+
+```bash
+python3 verify_emails.py --in candidates.json --out verified.json \
+    --helo yourdomain.com --probe-from you@yourdomain.com
+```
+
+Input is a JSON list of `{"email": "...", "alternates": ["..."]}`; each record comes back with a `verify` verdict — `valid` / `catch_all` / `invalid` / `no_mx` / `unknown` — and when you supply `alternates`, the first address that verifies replaces `email`. Feed the survivors straight into a send batch. (Outbound port 25 is blocked on most home/cloud networks; run it somewhere that can reach it.)
+
 ## 📏 Limits & quotas (know before you batch)
 
 - **Gmail daily sending limits apply** — they're your account's, not this tool's. Rough guide: consumer Gmail ≈ 100–150 automated sends/day is the safe zone; Google Workspace goes far higher (≈ 1,500–2,000/day). Spread big campaigns across days with per-email `send_at`.
@@ -145,6 +156,7 @@ Stdlib-only suite that spins up the mock server and locks down the scary paths: 
 |---|---|
 | [`Code.gs`](Code.gs) | ☁️ Server: idempotent intake → drafts w/ attachments → scheduled send + rescue trigger + daily sweep |
 | [`gmail_pipeline.py`](gmail_pipeline.py) | ⌨️ CLI: init / ping / validate / submit / status / cancel / send-now / convert |
+| [`verify_emails.py`](verify_emails.py) | ✅ Pre-flight verifier: MX + SMTP RCPT probe + catch-all detection, no mail sent |
 | [`skills/send-email/SKILL.md`](skills/send-email/SKILL.md) | 🤖 The Claude Code skill: recipe, flag table, copy rules, send-authorization etiquette |
 | [`install.sh`](install.sh) | 📥 One command → skill + CLI into `~/.claude/skills/send-email/` |
 | [`mock_server.py`](mock_server.py) | 🧪 In-memory fake server for end-to-end rehearsal |
