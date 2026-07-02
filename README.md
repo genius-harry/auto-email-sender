@@ -4,7 +4,7 @@
 
 ### Give your AI agent the power to send email — *without* the power to embarrass you.
 
-Submit a batch, close your laptop. Gmail sends on schedule from **Google's servers**.
+**Verify addresses, then send.** Submit a batch, close your laptop — Gmail sends on schedule from **Google's servers**.
 Ships as a ready-to-install **Claude Code skill** · doubles as a zero-dependency CLI.
 
 [![tests](https://github.com/genius-harry/auto-email-sender/actions/workflows/ci.yml/badge.svg)](https://github.com/genius-harry/auto-email-sender/actions/workflows/ci.yml)
