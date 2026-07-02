@@ -350,9 +350,12 @@ def _safe_name(s):
     return re.sub(r"[^\w.\-]", "_", s or "batch")[:60]
 
 
-def _client_key(label, ms, chunk, att_sig=""):
+def _client_key(label, ms, chunk, opts_sig=""):
+    """Idempotency key. Everything that changes WHAT gets sent must be in here —
+    recipients, copy, attachments, and send-shaping flags — otherwise a retry
+    with different options would be silently deduped into the old batch."""
     h = hashlib.sha256()
-    h.update(f"{label}|{ms}|{att_sig}|".encode())
+    h.update(f"{label}|{ms}|{opts_sig}|".encode())
     for em in sorted(chunk, key=lambda x: x["to"]):
         h.update(em["to"].lower().encode())
         h.update(hashlib.sha256((em["subject"] + " " + em["body"]).encode()).digest())
@@ -393,6 +396,8 @@ def cmd_submit(args):
                          "  paste the current tools/email-pipeline/Code.gs over the old code -> save ->\n"
                          "  Deploy -> Manage deployments -> pencil icon -> Version: New version -> Deploy.\n"
                          "  URL/secret/properties stay the same; then re-run this command.")
+    # send-shaping flags fold into the idempotency key alongside the attachment hash
+    opts_sig = f"{att_sig}|p{int(bool(getattr(args, 'plain', False)))}|d{int(bool(getattr(args, 'no_default_attach', False)))}"
 
     # group by send time (all parses validated above)
     # NB: parse the --send-at default ONCE — per-email parsing of relative times
@@ -450,10 +455,12 @@ def cmd_submit(args):
     rpath = os.path.join(rdir, f"{_safe_name(label)}-{stamp}.json")
 
     receipts, submitted_emails = [], set()
+    failed_recipients = []          # per-email draft failures the server reported
+    attach_mismatch = False
     failure = None
     for idx, (ms, chunk) in enumerate(plan):
         payload = {"action": "submit", "send_at_ms": ms, "emails": chunk,
-                   "label": label, "client_key": _client_key(label, ms, chunk, att_sig)}
+                   "label": label, "client_key": _client_key(label, ms, chunk, opts_sig)}
         if args.no_default_attach:
             payload["attach_default"] = False
         if attachments:
@@ -470,12 +477,18 @@ def cmd_submit(args):
             submitted_emails.add(em["to"].lower())
         dd = "  (deduped — was already submitted)" if out.get("deduped") else ""
         fails = out.get("draft_failures") or []
+        if fails:
+            # keep the ORIGINAL email objects so the failed recipients can be
+            # resubmitted as their own batch (a plain retry of this command would
+            # be deduped by client_key and the failures silently dropped)
+            failed_to = {str(f.get("to", "")).lower() for f in fails}
+            failed_recipients.extend(em for em in chunk if em["to"].lower() in failed_to)
         warn = f"  ⚠ {out['warning']}" if out.get("warning") else ""
         print(f"  [{idx+1}/{len(plan)}] batch {out['batch_id']}: drafted {out['drafted']}/{len(chunk)}{dd}{warn}"
               + (f"  !! {len(fails)} DRAFT FAILURES: {fails}" if fails else ""))
         if attachments and not out.get("deduped") and out.get("attached") != len(attachments):
-            print(f"      ⚠ server did not confirm attachments (attached={out.get('attached')!r}) "
-                  "— open the drafts in Gmail and check the files are on them")
+            attach_mismatch = True
+            print(f"      !! server did not confirm the attachments (attached={out.get('attached')!r})")
 
     if failure is not None:
         idx, err = failure
@@ -491,13 +504,35 @@ def cmd_submit(args):
         print("   RECOVERY: 1) gmail_pipeline.py status   (confirm what's live)")
         print(f"             2) re-run submit with --batch {rem_path} (same flags) — already-sent chunks")
         print("                are also safe to retry verbatim: client_key dedupes them server-side.")
+        if args.send_at and args.send_at.strip().startswith("+") and default_ms:
+            utc = datetime.fromtimestamp(default_ms / 1000, tz=timezone.utc)
+            print(f"   NB: you used a relative --send-at; for the retry to dedupe correctly use the")
+            print(f"       ABSOLUTE time it resolved to:  --send-at \"{utc:%Y-%m-%dT%H:%M:%S+00:00}\"")
         sys.exit(1)
 
+    exit_code = 0
+    if failed_recipients:
+        fail_path = os.path.join(rdir, f"failed-{_safe_name(label)}-{stamp}.json")
+        with open(fail_path, "w") as f:
+            json.dump(failed_recipients, f, indent=2, ensure_ascii=False)
+        print(f"\n!! {len(failed_recipients)} recipient(s) FAILED at draft creation -> {fail_path}")
+        print(f"   A verbatim re-run would be DEDUPED server-side and would NOT retry them.")
+        print(f"   RECOVERY: re-run submit with --batch {fail_path} (same flags) — the different")
+        print("             recipient set produces a new client_key, so it will actually send.")
+        exit_code = 1
+    if attach_mismatch:
+        print("\n!! ATTACHMENT ERROR: at least one chunk was drafted WITHOUT the requested files")
+        print("   (server did not confirm them). Do NOT let these drafts send as-is:")
+        print("     1) gmail_pipeline.py status --verbose            (find the affected batch ids)")
+        print("     2) gmail_pipeline.py cancel --batch-id <id> --trash-drafts")
+        print("     3) redeploy the latest Code.gs, then re-submit (new label => new client_key)")
+        exit_code = 1
+
     print(f"\nreceipt -> {rpath}")
+    if exit_code:
+        sys.exit(exit_code)
     print("Submitted. Drafts are in Gmail now; Google's servers send them at the times above.")
     print("Laptop can sleep. Check later with: gmail_pipeline.py status")
-    if any(r.get("draft_failures") for r in receipts):
-        sys.exit(1)
 
 
 def cmd_status(args):

@@ -100,14 +100,19 @@ class H(BaseHTTPRequestHandler):
                                    "drafted": k["drafted"], "draft_failures": [],
                                    "send_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                                 time.gmtime(k["sendAtMs"] / 1000))})
+            # contract parity: a local part starting with "faildraft" simulates a
+            # per-email draft-creation failure (reported in draft_failures, not drafted)
+            ok_emails = [em for em in emails if not em["to"].strip().lower().startswith("faildraft")]
+            failures = [{"to": em["to"].strip(), "error": "mock: simulated draft failure"}
+                        for em in emails if em["to"].strip().lower().startswith("faildraft")]
             items = [{"to": em["to"].strip(), "draftId": "d" + rid(), "state": "pending", "attempts": 0}
-                     for em in emails]
+                     for em in ok_emails]
             bid = rid()
             BATCHES[bid] = {"id": bid, "sendAtMs": ms, "label": req.get("label", ""),
                             "state": "pending", "items": items, "created": time.time() * 1000}
             KEYS[key] = {"batch_id": bid, "drafted": len(items), "sendAtMs": ms}
             return self._send({"ok": True, "batch_id": bid, "drafted": len(items),
-                               "draft_failures": [], "attached": len(atts),
+                               "draft_failures": failures, "attached": len(atts),
                                "send_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ms / 1000))})
 
         if action == "status":

@@ -7,6 +7,7 @@
 Submit a batch, close your laptop. Gmail sends on schedule from **Google's servers**.
 Ships as a ready-to-install **Claude Code skill** · doubles as a zero-dependency CLI.
 
+[![tests](https://github.com/genius-harry/auto-email-sender/actions/workflows/ci.yml/badge.svg)](https://github.com/genius-harry/auto-email-sender/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B%20·%20stdlib%20only-3776AB?logo=python&logoColor=white)](gmail_pipeline.py)
 [![Runs on](https://img.shields.io/badge/sending%20runs%20on-Google%20Apps%20Script-4285F4?logo=google&logoColor=white)](Code.gs)
@@ -24,10 +25,11 @@ Every sharp edge here is padded:
 
 | 😱 Classic agent failure | 🛡️ What happens here instead |
 |---|---|
-| Retries a timed-out call → **double-sends** | Idempotent `client_key` dedupe — retry the same command forever, nobody gets email twice |
+| Retries a timed-out call → **double-sends** | Idempotent `client_key` dedupe — retrying the same command (with an **absolute** `--send-at`; a relative `+10m` resolves to a new time = a new send) can never email anyone twice. Attachments and send-shaping flags are part of the key. |
 | Sends `Hi {First Name},` to a real human | Validator **hard-rejects** unfilled placeholders, empty greetings, dup recipients, past times |
 | Emails someone you already contacted | `--tracker contacts.csv` makes re-contact a **hard error**, not a silent oops |
-| "Sent it!" …without the attachment | CLI verifies the server confirmed **every** attachment, or refuses loudly |
+| "Sent it!" …without the attachment | CLI verifies the server confirmed **every** attachment; on mismatch it **exits non-zero** with cancel-and-retry steps so unattached drafts never quietly send |
+| A recipient fails at draft creation and gets forgotten | Per-recipient failures are written to a `failed-*.json` you can re-submit directly — with a fresh idempotency key, so the retry actually sends |
 | Fires without asking | The bundled skill teaches etiquette: **show the text, get an explicit "send it"** |
 | No paper trail | Every batch → receipt + batch id → `status` / `cancel` / `send-now` anytime |
 
@@ -111,6 +113,22 @@ python3 mock_server.py 8787    # terminal 1 — full POST contract, in memory
 AUTO_EMAIL_CONFIG=/tmp/test.json python3 gmail_pipeline.py init --url http://127.0.0.1:8787/exec --secret testsecret-123
 AUTO_EMAIL_CONFIG=/tmp/test.json python3 gmail_pipeline.py submit --batch test-batch.json --send-at '+10m' --no-tracker-check --yes
 ```
+
+## 📏 Limits & quotas (know before you batch)
+
+- **Gmail daily sending limits apply** — they're your account's, not this tool's. Rough guide: consumer Gmail ≈ 100–150 automated sends/day is the safe zone; Google Workspace goes far higher (≈ 1,500–2,000/day). Spread big campaigns across days with per-email `send_at`.
+- **Schedule horizon: 35 days** — the server rejects anything further out.
+- **Chunking: ≤30 emails per POST** (the CLI chunks automatically; `--chunk` to tune).
+- **Attachments: ≤10 files, ≤20MB raw per batch** — and they're applied to every email in the batch.
+- **Idempotency window: 7 days** — dedupe claims and finished batch records are auto-pruned after `DONE_RETENTION_DAYS`, so Script Properties never fill up. A verbatim resubmit more than 7 days later would send again.
+
+## 🧪 Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Stdlib-only suite that spins up the mock server and locks down the scary paths: DST-correct time parsing, validator rules, idempotent dedupe, flag-aware keys, attachment confirmation, per-recipient draft-failure recovery, and the recontact guard. Runs in CI on every push.
 
 ## 🔒 Security
 

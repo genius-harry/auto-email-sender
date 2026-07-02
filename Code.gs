@@ -331,6 +331,20 @@ function sendDueBatches() {
     var now = Date.now();
     var rearm = [];
     for (var k in all) {
+      // purge expired idempotency claims — without this, key_* records accumulate
+      // forever and eventually exhaust the 500KB Script Properties quota. A claim
+      // must outlive both its submit-retry window and the batch's send time, so
+      // age is measured from the LATER of claimedAt / sendAtMs.
+      if (k.indexOf('key_') === 0) {
+        try {
+          var claim = JSON.parse(all[k]);
+          var anchor = Math.max(Number(claim.claimedAt) || 0, Number(claim.sendAtMs) || 0);
+          if (now - anchor > DONE_RETENTION_DAYS * 24 * 3600 * 1000) props.deleteProperty(k);
+        } catch (badClaim) {
+          try { props.deleteProperty(k); } catch (ignored) {}
+        }
+        continue;
+      }
       if (k.indexOf('batch_') !== 0) continue;
       try {
         var b = JSON.parse(all[k]);
