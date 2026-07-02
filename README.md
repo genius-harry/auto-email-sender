@@ -14,6 +14,8 @@ Ships as a ready-to-install **Claude Code skill** · doubles as a zero-dependenc
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill%20included-D97757?logo=anthropic&logoColor=white)](skills/send-email/SKILL.md)
 [![Laptop](https://img.shields.io/badge/laptop-can%20be%20off%20😴-success)](#-how-it-works)
 
+<img src="assets/demo.gif" alt="An agent composing, validating, and sending an email through the pipeline" width="820">
+
 </div>
 
 ---
