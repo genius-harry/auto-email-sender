@@ -1,66 +1,92 @@
-# auto-email-sender
+<div align="center">
 
-**Give your AI agent the ability to send email — safely.** A Gmail sending pipeline where the actual sending runs on **Google's servers** (submit and close your laptop), designed so that an agent operating it unsupervised is hard-pressed to embarrass you. Ships as a ready-to-install **Claude Code skill**, and doubles as a zero-dependency CLI for humans.
+# 📮 auto-email-sender
 
+### Give your AI agent the power to send email — *without* the power to embarrass you.
+
+Submit a batch, close your laptop. Gmail sends on schedule from **Google's servers**.
+Ships as a ready-to-install **Claude Code skill** · doubles as a zero-dependency CLI.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B%20·%20stdlib%20only-3776AB?logo=python&logoColor=white)](gmail_pipeline.py)
+[![Runs on](https://img.shields.io/badge/sending%20runs%20on-Google%20Apps%20Script-4285F4?logo=google&logoColor=white)](Code.gs)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-skill%20included-D97757?logo=anthropic&logoColor=white)](skills/send-email/SKILL.md)
+[![Laptop](https://img.shields.io/badge/laptop-can%20be%20off%20😴-success)](#-how-it-works)
+
+</div>
+
+---
+
+## 🤖 Why hand this to an agent instead of a raw "send email" function?
+
+Because a raw send function + an enthusiastic LLM = a spam incident with your name on it.
+Every sharp edge here is padded:
+
+| 😱 Classic agent failure | 🛡️ What happens here instead |
+|---|---|
+| Retries a timed-out call → **double-sends** | Idempotent `client_key` dedupe — retry the same command forever, nobody gets email twice |
+| Sends `Hi {First Name},` to a real human | Validator **hard-rejects** unfilled placeholders, empty greetings, dup recipients, past times |
+| Emails someone you already contacted | `--tracker contacts.csv` makes re-contact a **hard error**, not a silent oops |
+| "Sent it!" …without the attachment | CLI verifies the server confirmed **every** attachment, or refuses loudly |
+| Fires without asking | The bundled skill teaches etiquette: **show the text, get an explicit "send it"** |
+| No paper trail | Every batch → receipt + batch id → `status` / `cancel` / `send-now` anytime |
+
+## ⚡ How it works
+
+```mermaid
+flowchart LR
+    A["🤖 agent / 👤 you<br/>gmail_pipeline.py<br/><i>python3 stdlib, zero deps</i>"]
+    B["☁️ Code.gs<br/>Apps Script web app<br/><i>on YOUR Google account</i>"]
+    C["📬 Gmail<br/>drafts now,<br/>sends on schedule"]
+    A -- "HTTPS · JSON + shared secret" --> B
+    B -- "receipts · status · batch ids" --> A
+    B -- "time-based triggers<br/>+ rescue trigger + daily sweep" --> C
 ```
-┌────────────────────┐   HTTPS (JSON + shared secret)   ┌──────────────────────────┐
-│ your agent / you    │ ───────────────────────────────▶ │ Code.gs (Apps Script     │
-│ gmail_pipeline.py   │                                  │ web app on YOUR account) │
-│ (python3 stdlib)    │ ◀─────────────────────────────── │ drafts now, sends later  │
-└────────────────────┘          status / receipts        │ via time-based triggers  │
-                                                         └──────────────────────────┘
-```
 
-## Why agents need this exact shape
+No Gmail "Schedule send" 100-email cap. No third-party email service reading your mail. No daemon on your machine — **the sending happens server-side even if your laptop is in a backpack**.
 
-Handing an LLM agent a raw "send email" function is asking for trouble. This pipeline is built agent-first:
-
-- **Idempotent submits** — an agent that retries a timed-out request can never double-send (server-side `client_key` dedupe). Crash mid-batch? Re-run the same command; already-sent chunks are skipped.
-- **A validator that catches classic agent mistakes** before anything sends: unfilled `{First Name}` / `[Company]` template placeholders, empty greetings ("Hi ,"), duplicate recipients, past send times, suspiciously short bodies, newlines in subjects.
-- **Contact-history guard** — point `--tracker` at a CSV of everyone already emailed and re-contacting any of them becomes a hard error, not a silent spam incident.
-- **Attachment integrity** — the CLI verifies the server confirmed every attachment; it refuses (with instructions) rather than silently sending without files.
-- **Receipts and batch ids for everything** — every send is auditable and cancellable (`status` / `cancel` / `send-now`).
-- **An in-memory mock server** — agents (and their test harnesses) can rehearse the full flow with zero risk of real email.
-
-The bundled skill also teaches the agent etiquette: show the user the final text and get an explicit "send it" before anything leaves.
-
-## Install as a Claude Code skill (~5 min)
+## 🚀 Install as a Claude Code skill (~5 min)
 
 ```bash
 git clone https://github.com/genius-harry/auto-email-sender.git
 cd auto-email-sender
-./install.sh          # copies the skill + CLI to ~/.claude/skills/send-email/
+./install.sh        # → ~/.claude/skills/send-email/  (works from every repo)
 ```
 
-Then the one-time server setup (below), and restart Claude Code. From then on — in **any** repo — saying *"email Sam that the report is ready, attach q3.xlsx"* triggers the skill and the agent does the rest correctly: batch JSON → validation → submit → confirmation with a batch id.
+Do the one-time server setup below, restart Claude Code, and from then on:
 
-Not on Claude Code? `skills/send-email/SKILL.md` is a self-contained operating manual any agent framework can load as a tool guide, and the CLI is plain stdlib Python.
+> **You:** *"email Sam that the Q3 report is ready, attach q3.xlsx"*
+> **Agent:** *writes the batch → validates → submits → "Sent ✅ batch `b07101402_k3x9p`, 1/1 delivered"*
 
-## One-time server setup (both tracks)
+Not on Claude Code? [`skills/send-email/SKILL.md`](skills/send-email/SKILL.md) is a self-contained operating manual any agent framework can load as a tool guide.
+
+<details>
+<summary><b>🔧 One-time server setup (click to expand)</b></summary>
 
 1. Generate a secret: `python3 -c "import secrets; print(secrets.token_urlsafe(24))"`
-2. Open [script.google.com](https://script.google.com) with the Google account you send from → **New project** → paste all of `Code.gs` → save.
-3. **Project Settings → Script properties** → add `SECRET` = the string from step 1.
-   Optional: `SENDER_NAME` (display name), `DEFAULT_ATTACHMENT_FILE_ID` (a Drive file attached to every email unless a batch opts out with `--no-default-attach`).
-4. **Services** → **+** → add **Gmail API**.
-5. **Deploy → New deployment → Web app** → Execute as **Me**, access **Anyone with the link** → authorize → copy the `/exec` URL.
-6. Function dropdown → **`installDailySweep`** → **Run** (daily backstop that re-delivers anything a lost trigger stranded — required).
-7. Connect and smoke-test:
+2. [script.google.com](https://script.google.com) (the account you send from) → **New project** → paste all of [`Code.gs`](Code.gs) → save
+3. **Project Settings → Script properties** → add `SECRET` = the string from step 1
+   *(optional: `SENDER_NAME` display name · `DEFAULT_ATTACHMENT_FILE_ID` a Drive file attached to every email unless a batch passes `--no-default-attach`)*
+4. **Services → +** → add **Gmail API**
+5. **Deploy → New deployment → Web app** → Execute as **Me** · access **Anyone with the link** → authorize → copy the `/exec` URL
+6. Function dropdown → **`installDailySweep`** → **Run** *(daily backstop that re-delivers anything a lost trigger stranded — required, not optional)*
+7. Connect + smoke test:
    ```bash
    python3 gmail_pipeline.py init --url '<your /exec URL>'   # prompts for the secret
-   python3 gmail_pipeline.py ping                            # expect: pong ... (server v4)
-   # edit test-batch.json to your own addresses, then:
+   python3 gmail_pipeline.py ping                            # → pong ... (server v4)
+   # put your own address in test-batch.json, then:
    python3 gmail_pipeline.py submit --batch test-batch.json --send-at '+10m' --no-tracker-check --yes
    ```
+</details>
 
-## The hardcore track: CLI for humans
+## ⌨️ The hardcore track (humans with terminals)
 
 ```bash
-# schedule for a specific time (DST-aware aliases ET/CT/MT/PT; also CN, fixed offsets, ISO, '+10m')
+# schedule: DST-aware aliases ET/CT/MT/PT · CN · fixed offsets · ISO · '+10m'
 python3 gmail_pipeline.py submit --batch batch.json --send-at "2026-07-10 09:00" --tz ET \
     --no-tracker-check --label report-0710 --attach q3-report.xlsx
 
-# send immediately
+# send right now
 python3 gmail_pipeline.py submit --batch batch.json --send-at '+2m' --no-tracker-check --label hello --yes
 python3 gmail_pipeline.py send-now --batch-id <id printed above>
 
@@ -69,7 +95,7 @@ python3 gmail_pipeline.py status --verbose
 python3 gmail_pipeline.py cancel --batch-id <id> --trash-drafts
 ```
 
-Batch format — a JSON list (bodies are plain text; a rich-text HTML version is generated automatically so recipients never see the hard-wrapped "boxed" look; URLs become links; `--plain` opts out):
+Batch = a JSON list. Bodies are plain text; a **rich-text HTML version is generated automatically** (no hard-wrapped "boxed" look, URLs become links; `--plain` opts out). Per-email `send_at` lets one submit fan out across time zones:
 
 ```json
 [{"to": "someone@example.com",
@@ -78,37 +104,36 @@ Batch format — a JSON list (bodies are plain text; a rich-text HTML version is
   "send_at": "2026-07-10 09:00 ET"}]
 ```
 
-Per-email `send_at` lets one submit fan out across time zones. For campaigns, pass `--tracker contacts.csv` (needs an `email` column) — re-contacting anyone already in it hard-fails (`--allow-recontact` downgrades to a warning).
-
-## Testing without sending anything
+## 🧪 Rehearse without sending anything
 
 ```bash
-python3 mock_server.py 8787   # terminal 1
-AUTO_EMAIL_CONFIG=/tmp/test-config.json python3 gmail_pipeline.py init \
-    --url http://127.0.0.1:8787/exec --secret testsecret-123
-AUTO_EMAIL_CONFIG=/tmp/test-config.json python3 gmail_pipeline.py submit \
-    --batch test-batch.json --send-at '+10m' --no-tracker-check --yes
+python3 mock_server.py 8787    # terminal 1 — full POST contract, in memory
+AUTO_EMAIL_CONFIG=/tmp/test.json python3 gmail_pipeline.py init --url http://127.0.0.1:8787/exec --secret testsecret-123
+AUTO_EMAIL_CONFIG=/tmp/test.json python3 gmail_pipeline.py submit --batch test-batch.json --send-at '+10m' --no-tracker-check --yes
 ```
 
-The mock implements the full POST contract (idempotency included) in memory.
+## 🔒 Security
 
-## Security notes
+- Secret lives in Apps Script **Script properties** (server) + `~/.config/auto-email-sender/config.json` chmod `600` (local). **Never in code, never in this repo.**
+- URL without the secret → `auth failed`, nothing else.
+- Server re-validates recipients (blocks comma-injection multi-recipient tricks) and only reads the default attachment from its own property — never from the request.
+- Rotate anytime: change the Script property + re-run `init`. No redeploy.
 
-- The secret lives in Apps Script **Script properties** (server) and `~/.config/auto-email-sender/config.json` chmod 600 (local) — never in code or this repo.
-- Someone with the URL but not the secret gets `auth failed` and nothing else.
-- The server re-validates recipients (blocks comma-injected multi-recipient tricks) and only reads the default attachment from its own Script property, never from the request.
-- Rotate the secret anytime: change the Script property + re-run `init`. No redeploy.
-
-## Files
+## 📦 What's in the box
 
 | File | Purpose |
 |---|---|
-| `Code.gs` | Server: idempotent batch intake → drafts with attachments → scheduled send with rescue trigger + daily sweep → status/cancel/retry |
-| `gmail_pipeline.py` | CLI: init / ping / validate / submit / status / cancel / send-now / convert |
-| `skills/send-email/SKILL.md` | The Claude Code skill: recipe, flag decision table, copy rules, authorization etiquette |
-| `install.sh` | Installs the skill + CLI to `~/.claude/skills/send-email/` |
-| `mock_server.py` | In-memory fake server for end-to-end rehearsal |
-| `test-batch.json` | Two-email smoke test (edit the addresses to your own) |
-| `config.example.json` | Shape of the local config written by `init` |
+| [`Code.gs`](Code.gs) | ☁️ Server: idempotent intake → drafts w/ attachments → scheduled send + rescue trigger + daily sweep |
+| [`gmail_pipeline.py`](gmail_pipeline.py) | ⌨️ CLI: init / ping / validate / submit / status / cancel / send-now / convert |
+| [`skills/send-email/SKILL.md`](skills/send-email/SKILL.md) | 🤖 The Claude Code skill: recipe, flag table, copy rules, send-authorization etiquette |
+| [`install.sh`](install.sh) | 📥 One command → skill + CLI into `~/.claude/skills/send-email/` |
+| [`mock_server.py`](mock_server.py) | 🧪 In-memory fake server for end-to-end rehearsal |
+| [`test-batch.json`](test-batch.json) | ✉️ Two-email smoke test (put your own addresses in) |
 
-MIT licensed.
+<div align="center">
+
+**MIT** · hardened by adversarial review · battle-tested on real outbound volume
+
+⭐ *star it if your agent now sends email without embarrassing you*
+
+</div>
