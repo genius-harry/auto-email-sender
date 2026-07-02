@@ -39,10 +39,12 @@ Every sharp edge here is padded:
 
 ```mermaid
 flowchart LR
+    V["✅ verify_emails.py<br/>MX + SMTP RCPT probe<br/><i>drops bad addresses, sends no mail</i>"]
     A["🤖 agent / 👤 you<br/>gmail_pipeline.py<br/><i>python3 stdlib, zero deps</i>"]
     B["☁️ Code.gs<br/>Apps Script web app<br/><i>on YOUR Google account</i>"]
     C["📬 Gmail<br/>drafts now,<br/>sends on schedule"]
-    A -- "HTTPS · JSON + shared secret" --> B
+    V -- "verified recipients" --> A
+    A -- "HTTPS · JSON + shared secret<br/>(validate → idempotent submit)" --> B
     B -- "receipts · status · batch ids" --> A
     B -- "time-based triggers<br/>+ rescue trigger + daily sweep" --> C
 ```
